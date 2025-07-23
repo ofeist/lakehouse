@@ -1,0 +1,56 @@
+# --------------------------------------------------------------------
+# Hive Standalone Metastore + S3A (MinIO)
+# --------------------------------------------------------------------
+FROM openjdk:8-jdk-slim
+
+ARG HIVE_METASTORE_VERSION=3.1.3
+ARG HADOOP_VERSION=3.1.3
+ARG AWS_BUNDLE_VER=1.11.901
+
+ENV HIVE_HOME=/opt/hive \
+    HADOOP_HOME=/opt/hadoop \
+    PATH=$PATH:/opt/hive/bin
+
+# -----------------------------
+# OS deps
+# -----------------------------
+RUN apt-get update && apt-get install -y curl tar procps && rm -rf /var/lib/apt/lists/*
+
+# -----------------------------
+# Hive Standalone Metastore JAR (Maven Central)
+# -----------------------------
+RUN mkdir -p $HIVE_HOME && \
+    curl -sL https://repo1.maven.org/maven2/org/apache/hive/hive-standalone-metastore/${HIVE_METASTORE_VERSION}/hive-standalone-metastore-${HIVE_METASTORE_VERSION}.jar \
+    -o $HIVE_HOME/hive-standalone-metastore.jar
+
+# -----------------------------
+# Hadoop libs (for FileSystem impl incl. s3a)
+# -----------------------------
+RUN curl -sL https://archive.apache.org/dist/hadoop/common/hadoop-${HADOOP_VERSION}/hadoop-${HADOOP_VERSION}.tar.gz \
+    | tar -xz -C /opt && \
+    mv /opt/hadoop-${HADOOP_VERSION} $HADOOP_HOME
+
+# -----------------------------
+# S3A dependencies
+# -----------------------------
+RUN mkdir -p $HIVE_HOME/auxlib && \
+    curl -sL https://repo1.maven.org/maven2/org/apache/hadoop/hadoop-aws/${HADOOP_VERSION}/hadoop-aws-${HADOOP_VERSION}.jar \
+      -o $HIVE_HOME/auxlib/hadoop-aws.jar && \
+    curl -sL https://repo1.maven.org/maven2/com/amazonaws/aws-java-sdk-bundle/${AWS_BUNDLE_VER}/aws-java-sdk-bundle-${AWS_BUNDLE_VER}.jar \
+      -o $HIVE_HOME/auxlib/aws-sdk-bundle.jar
+
+# -----------------------------
+# Classpath envs so Hive picks jars automatically
+# (CLASSPATH is for java -cp fallback; AUX vars are used by Hive)
+# -----------------------------
+ENV METASTORE_AUX_JARS_PATH=$HIVE_HOME/auxlib \
+    HIVE_AUX_JARS_PATH=$HIVE_HOME/auxlib \
+    CLASSPATH=$HIVE_HOME/hive-standalone-metastore.jar:$HIVE_HOME/auxlib/*:$HADOOP_HOME/share/hadoop/common/*:$HADOOP_HOME/share/hadoop/common/lib/*:$HADOOP_HOME/share/hadoop/hdfs/*:$HADOOP_HOME/share/hadoop/hdfs/lib/*:$HADOOP_HOME/share/hadoop/mapreduce/*:$HADOOP_HOME/share/hadoop/mapreduce/lib/*:$HADOOP_HOME/share/hadoop/yarn/*:$HADOOP_HOME/share/hadoop/yarn/lib/*
+
+# -----------------------------
+# Default command: start metastore on 0.0.0.0:9083
+# (Optionally run schematool first if using external DB)
+# -----------------------------
+EXPOSE 9083
+CMD ["sh", "-c", "java -Xmx1g org.apache.hadoop.hive.metastore.HiveMetaStore 9083"]
+
