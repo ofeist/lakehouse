@@ -1,17 +1,22 @@
 FROM apache/hive:3.1.3
 
-# Create folder for extra JARs (to be used via HADOOP_CLASSPATH)
-RUN mkdir -p /opt/hive/extra-jars
+ARG HADOOP_AWS_VER=3.1.0
+ARG AWS_BUNDLE_VER=1.11.901
 
-# Add S3A and AWS SDK jars compatible with Hadoop 3.3.x / Hive 3.1.x
-ADD https://repo1.maven.org/maven2/org/apache/hadoop/hadoop-aws/3.3.6/hadoop-aws-3.3.6.jar /opt/hive/extra-jars/
-ADD https://repo1.maven.org/maven2/com/amazonaws/aws-java-sdk-bundle/1.12.661/aws-java-sdk-bundle-1.12.661.jar /opt/hive/extra-jars/
-
-# Optionally copy jars to Hadoop common lib (in case some subsystems expect them there)
 USER root
-RUN cp /opt/hive/extra-jars/*.jar /opt/hadoop/share/hadoop/common/lib/
+ENV EXTRA_JARS=/opt/hive/extra-jars
+
+RUN mkdir -p $EXTRA_JARS \
+ && rm -f /opt/hadoop/share/hadoop/tools/lib/hadoop-aws-*.jar \
+          /opt/hadoop/share/hadoop/common/lib/hadoop-aws-*.jar
+
+ADD https://repo1.maven.org/maven2/org/apache/hadoop/hadoop-aws/${HADOOP_AWS_VER}/hadoop-aws-${HADOOP_AWS_VER}.jar $EXTRA_JARS/
+ADD https://repo1.maven.org/maven2/com/amazonaws/aws-java-sdk-bundle/${AWS_BUNDLE_VER}/aws-java-sdk-bundle-${AWS_BUNDLE_VER}.jar $EXTRA_JARS/
+
+RUN cp $EXTRA_JARS/*.jar /opt/hive/lib/ \
+ && cp $EXTRA_JARS/*.jar /opt/hadoop/share/hadoop/common/lib/
+
+ENV METASTORE_AUX_JARS_PATH=$EXTRA_JARS/* \
+    HIVE_AUX_JARS_PATH=$EXTRA_JARS/*
+
 USER hive
-
-# Define the Hadoop classpath so Hive can find the extra JARs
-ENV HADOOP_CLASSPATH=/opt/hive/extra-jars/*
-
